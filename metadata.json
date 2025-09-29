@@ -1,0 +1,7 @@
+{
+  "name": "Sirsi AI Chatbot",
+  "description": "An AI-powered chatbot that simulates human conversation to assist users with their queries. It uses Natural Language Processing to understand user intent and provides helpful, context-aware responses.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
