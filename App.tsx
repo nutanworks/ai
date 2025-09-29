@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Header from './components/Header';
 import ChatWindow from './components/ChatWindow';
@@ -8,18 +9,51 @@ import { Role } from './types';
 import type { Message } from './types';
 import type { Chat } from '@google/genai';
 
+const CHAT_HISTORY_KEY = 'chatHistory';
+
 const App: React.FC = () => {
-    const [messages, setMessages] = useState<Message[]>([GREETING_MESSAGE]);
+    // Load messages from localStorage or use the initial greeting
+    const [messages, setMessages] = useState<Message[]>(() => {
+        try {
+            const savedMessages = localStorage.getItem(CHAT_HISTORY_KEY);
+            if (savedMessages) {
+                const parsedMessages = JSON.parse(savedMessages);
+                if (Array.isArray(parsedMessages) && parsedMessages.length > 0) {
+                    return parsedMessages;
+                }
+            }
+        } catch (error) {
+            console.error("Failed to load chat history from localStorage", error);
+        }
+        return [GREETING_MESSAGE];
+    });
+
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const chatSession = useRef<Chat | null>(null);
 
+    // Save messages to localStorage whenever they change
     useEffect(() => {
-        // Initialize the chat session when the component mounts
-        chatSession.current = createChatSession();
+        try {
+             // Don't save if it's just the initial greeting message
+            if (messages.length > 1 || (messages.length === 1 && messages[0].id !== 'initial-greeting')) {
+                 localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(messages));
+            }
+        } catch (error) {
+            console.error("Failed to save chat history to localStorage", error);
+        }
+    }, [messages]);
+
+
+    // Initialize the chat session with history on mount
+    useEffect(() => {
+        chatSession.current = createChatSession(messages);
     }, []);
 
     const processMessage = useCallback(async (text: string, messageId: string) => {
-        if (!chatSession.current) return;
+        if (!chatSession.current) {
+            // Re-initialize session if it's missing (e.g., after an error)
+            chatSession.current = createChatSession(messages);
+        };
         setIsLoading(true);
 
         try {
@@ -52,12 +86,10 @@ const App: React.FC = () => {
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [messages]);
 
 
     const handleSendMessage = useCallback((text: string) => {
-        if (!chatSession.current) return;
-
         const userMessage: Message = {
             id: Date.now().toString(),
             role: Role.USER,
@@ -73,14 +105,12 @@ const App: React.FC = () => {
         if (!messageToRetry) return;
 
         setMessages(prev => {
-            const messageIndex = prev.findIndex(m => m.id === messageId);
-            if (messageIndex === -1) return prev;
-
-            // Remove the bot's error message that immediately follows the failed user message
-            const filteredMessages = prev.filter((_, index) => index !== messageIndex + 1);
-            
-            // Update the message being retried to remove the error flag
-            return filteredMessages.map(msg => 
+            // Find the failed message and remove the bot error message that follows it
+            return prev.filter(msg => {
+                const failedMsgIndex = prev.findIndex(m => m.id === messageId);
+                const errorMsgId = prev[failedMsgIndex + 1]?.id;
+                return msg.id !== errorMsgId;
+            }).map(msg => 
                 msg.id === messageId ? { ...msg, error: false } : msg
             );
         });
